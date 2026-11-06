@@ -8,7 +8,7 @@
 //! - [`nav_tree`]: navigation links in nested `<details>`. It is not a
 //!   `role="tree"`, because a tree is the wrong pattern for site navigation.
 //!
-//! Install the pack with [`TreePlugin`], and link [`pack`]`().head()` in the
+//! Install the pack with [`TreePlugin`]. Link `pack().head()` (see [`pack`]) in the
 //! layout.
 
 mod budget;

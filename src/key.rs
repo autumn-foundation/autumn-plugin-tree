@@ -25,7 +25,20 @@ impl TreeKey {
     /// one-to-one, so two keys never give one token.
     #[must_use]
     pub fn token(&self) -> String {
-        String::new()
+        use std::fmt::Write as _;
+        if self.0.is_empty() {
+            return "_".to_owned();
+        }
+        let mut out = String::with_capacity(self.0.len());
+        for byte in self.0.bytes() {
+            if byte.is_ascii_alphanumeric() {
+                out.push(char::from(byte));
+            } else {
+                // Writing to a `String` cannot fail.
+                let _ = write!(out, "_{byte:02x}");
+            }
+        }
+        out
     }
 }
 

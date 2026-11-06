@@ -47,3 +47,5 @@ panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 module_name_repetitions = "allow"
+# `pub(crate)` marks crate-only items in private modules.
+redundant_pub_crate = "allow"

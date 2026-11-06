@@ -1,5 +1,12 @@
 //! The data model: keys, links and nodes.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a test fails loud"
+)]
+
 use autumn_plugin_tree::{Children, TreeKey, TreeNode, safe_href};
 
 #[test]
@@ -111,7 +118,10 @@ fn children_add_in_order() {
 #[test]
 fn a_lazy_node_holds_its_url() {
     let node = TreeNode::new("p", "P").lazy("/children?node=p");
-    assert_eq!(node.child_nodes(), &Children::Lazy("/children?node=p".into()));
+    assert_eq!(
+        node.child_nodes(),
+        &Children::Lazy("/children?node=p".into())
+    );
 }
 
 #[test]

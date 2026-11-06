@@ -1,5 +1,12 @@
 //! `TreeField::resolve`: the server check of a submitted form.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a test fails loud"
+)]
+
 mod common;
 
 use autumn_plugin_tree::{Cascade, TreeField, TreeKey, TreeNode};
@@ -18,7 +25,10 @@ fn unknown_keys_are_dropped() {
 #[test]
 fn the_result_is_in_tree_order_without_duplicates() {
     let tree = TreeField::multiple(files()).cascade(Cascade::Independent);
-    assert_eq!(keys(&tree.resolve(&["readme", "lib", "readme", "src"])), ["src", "lib", "readme"]);
+    assert_eq!(
+        keys(&tree.resolve(&["readme", "lib", "readme", "src"])),
+        ["src", "lib", "readme"]
+    );
 }
 
 #[test]
@@ -31,7 +41,10 @@ fn a_checked_parent_adds_its_descendants() {
 fn a_parent_with_all_children_checked_is_added() {
     let tree = TreeField::multiple(files());
     assert_eq!(keys(&tree.resolve(&["main"])), ["bin", "main"]);
-    assert_eq!(keys(&tree.resolve(&["main", "lib"])), ["src", "lib", "bin", "main"]);
+    assert_eq!(
+        keys(&tree.resolve(&["main", "lib"])),
+        ["src", "lib", "bin", "main"]
+    );
 }
 
 #[test]
@@ -42,10 +55,10 @@ fn a_parent_with_some_children_checked_is_not_added() {
 
 #[test]
 fn disabled_keys_are_dropped_and_do_not_count() {
-    let nodes = vec![TreeNode::new("p", "P").children([
-        TreeNode::new("a", "A"),
-        TreeNode::new("b", "B").disabled(),
-    ])];
+    let nodes = vec![
+        TreeNode::new("p", "P")
+            .children([TreeNode::new("a", "A"), TreeNode::new("b", "B").disabled()]),
+    ];
     let tree = TreeField::multiple(nodes);
     assert_eq!(keys(&tree.resolve(&["b"])), Vec::<&str>::new());
     // `b` is disabled, so a check on `a` checks the parent.

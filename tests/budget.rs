@@ -1,5 +1,12 @@
 //! Render budgets: a deep or large tree does not stop the server.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a test fails loud"
+)]
+
 mod common;
 
 use autumn_plugin_tree::{MAX_DEPTH, MAX_NODES, TreeField, TreeNode, nav_tree, tree_field};
@@ -22,8 +29,14 @@ fn chain(depth: usize) -> TreeNode {
 
 fn field_html(nodes: Vec<TreeNode>) -> String {
     let changeset = Changeset::new(Pick::default());
-    tree_field(&changeset, "pick", "Pick", &TreeField::multiple(nodes), &FieldOptions::new())
-        .into_string()
+    tree_field(
+        &changeset,
+        "pick",
+        "Pick",
+        &TreeField::multiple(nodes),
+        &FieldOptions::new(),
+    )
+    .into_string()
 }
 
 #[test]
@@ -43,8 +56,9 @@ fn a_deep_tree_stops_at_max_depth() {
 
 #[test]
 fn a_large_tree_stops_at_max_nodes() {
-    let nodes: Vec<TreeNode> =
-        (0..MAX_NODES + 500).map(|i| TreeNode::new(format!("k{i}"), "x")).collect();
+    let nodes: Vec<TreeNode> = (0..MAX_NODES + 500)
+        .map(|i| TreeNode::new(format!("k{i}"), "x"))
+        .collect();
     let doc = parse(&field_html(nodes));
     assert_eq!(select(&doc, "li.autumn-tree-node").len(), MAX_NODES);
 }

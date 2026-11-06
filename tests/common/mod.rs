@@ -1,6 +1,6 @@
 //! Test helpers.
 
-#![allow(dead_code)]
+#![allow(dead_code, reason = "each test binary uses some helpers")]
 
 use autumn_plugin_tree::TreeNode;
 use scraper::{ElementRef, Html, Selector};
@@ -19,7 +19,12 @@ pub fn select<'a>(doc: &'a Html, css: &str) -> Vec<ElementRef<'a>> {
 /// The one element that matches `css`.
 pub fn one<'a>(doc: &'a Html, css: &str) -> ElementRef<'a> {
     let found = select(doc, css);
-    assert_eq!(found.len(), 1, "expected one `{css}`, found {}", found.len());
+    assert_eq!(
+        found.len(),
+        1,
+        "expected one `{css}`, found {}",
+        found.len()
+    );
     found[0]
 }
 

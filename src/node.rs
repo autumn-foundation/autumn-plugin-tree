@@ -41,34 +41,38 @@ impl TreeNode {
     /// Set the link. [`nav_tree`](crate::nav_tree) uses it.
     #[must_use]
     pub fn href(mut self, href: impl Into<String>) -> Self {
-        let _ = href.into();
+        self.href = Some(href.into());
         self
     }
 
     /// Make the node disabled.
     #[must_use]
-    pub const fn disabled(self) -> Self {
+    pub const fn disabled(mut self) -> Self {
+        self.disabled = true;
         self
     }
 
-    /// Add a child node.
+    /// Add a child node. This replaces a lazy URL.
     #[must_use]
     pub fn child(self, child: Self) -> Self {
-        let _ = child;
+        self.children([child])
+    }
+
+    /// Add child nodes. This replaces a lazy URL.
+    #[must_use]
+    pub fn children(mut self, children: impl IntoIterator<Item = Self>) -> Self {
+        match &mut self.children {
+            Children::Nodes(nodes) => nodes.extend(children),
+            other => *other = Children::Nodes(children.into_iter().collect()),
+        }
         self
     }
 
-    /// Add child nodes.
+    /// Load the children from `url` when the node opens. This replaces
+    /// the children.
     #[must_use]
-    pub fn children(self, children: impl IntoIterator<Item = Self>) -> Self {
-        let _ = children.into_iter().count();
-        self
-    }
-
-    /// Load the children from `url` when the node opens.
-    #[must_use]
-    pub fn lazy(self, url: impl Into<String>) -> Self {
-        let _ = url.into();
+    pub fn lazy(mut self, url: impl Into<String>) -> Self {
+        self.children = Children::Lazy(url.into());
         self
     }
 
@@ -100,5 +104,16 @@ impl TreeNode {
     #[must_use]
     pub const fn child_nodes(&self) -> &Children {
         &self.children
+    }
+}
+
+impl TreeNode {
+    /// The child nodes that the server renders now. Empty for an end node
+    /// and for a lazy node.
+    pub(crate) fn loaded(&self) -> &[Self] {
+        match &self.children {
+            Children::Nodes(nodes) => nodes,
+            Children::None | Children::Lazy(_) => &[],
+        }
     }
 }
