@@ -19,7 +19,7 @@ struct Branch {
     node: String,
 }
 
-/// The top of the tree. `archive` loads its children on demand.
+/// The top of the tree. `archive` loads its children when it opens.
 fn tree() -> TreeField {
     TreeField::multiple([
         TreeNode::new("src", "src").children([
@@ -29,6 +29,7 @@ fn tree() -> TreeField {
         TreeNode::new("archive", "archive").lazy("/children?node=archive"),
         TreeNode::new("readme", "README.md"),
     ])
+    // The default cascade, written out for the reader.
     .cascade(Cascade::Descendants)
     .lines()
 }

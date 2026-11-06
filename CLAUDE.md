@@ -6,12 +6,12 @@ A widget pack for Autumn. One crate: `autumn-plugin-tree`. It has
 ## Commands
 
 - Format: `cargo fmt --all`
-- Lint: `cargo clippy --all-targets --features system-tests -- -D warnings`
+- Lint: `cargo clippy --all-targets --all-features -- -D warnings`
 - Test: `cargo test`
 - Browser tests (Chromium):
-  `cargo test --features system-tests --test browser -- --include-ignored`
-- Tree-key tests (need autumn `main`):
-  `cargo test --features system-tests,core-tree-keys --test browser --config 'patch.crates-io.autumn-web.git="https://github.com/autumn-foundation/autumn"' -- --include-ignored`
+  `cargo test --features system-tests --test browser -- --include-ignored --test-threads=1`
+- Tree-key tests (need the autumn default branch, `trunk-dev`):
+  `cargo test --features system-tests,core-tree-keys --test browser --config 'patch.crates-io.autumn-web.git="https://github.com/autumn-foundation/autumn"' --config 'patch.crates-io.autumn-web.branch="trunk-dev"' -- --include-ignored --test-threads=1`
 - Local autumn checkout: `--config 'patch.crates-io.autumn-web.path="../autumn/autumn"'`
 
 ## Layout
@@ -22,6 +22,7 @@ A widget pack for Autumn. One crate: `autumn-plugin-tree`. It has
 | `src/node.rs` | `TreeNode` and `Children`. |
 | `src/href.rs` | `safe_href`, the link filter. |
 | `src/budget.rs` | `MAX_DEPTH`, `MAX_NODES`. |
+| `src/flat.rs` | One walk inside the budgets. The renderers and `resolve` read it. |
 | `src/field.rs` | `TreeField`: render, tri-state, cascade, `resolve`, `branch`. |
 | `src/nav.rs` | `nav_tree`. |
 | `src/pack.rs` | `pack()`, `ASSETS`, stories, `TreePlugin`. |
@@ -42,12 +43,15 @@ A widget pack for Autumn. One crate: `autumn-plugin-tree`. It has
 - **The native inputs are the form state.** The script changes
   `input.checked`, then writes the ARIA state from the inputs.
 - **Check all posted keys with `TreeField::resolve`.**
-- **Keep the render budgets.** A new walk over the nodes uses `MAX_DEPTH`
-  and `MAX_NODES`.
+- **Keep the render budgets.** A new walk over the nodes reads `Flat`.
+- **A disabled node is frozen.** It keeps its own state. A cascade does not
+  go through it. The server, `resolve` and `tree.js` use this one rule.
+- **The row is the tree item.** The `<li>` is `role="none"`. The row names
+  its group in `aria-owns`.
 - No `unwrap`, `expect` or `panic!` in library code.
 - No behaviour without a test. Markup: `tests/tree_field.rs`,
   `tests/nav_tree.rs`. Server checks: `tests/resolve.rs`. Browser:
   `tests/browser.rs`.
-- Comments and docs: short, plain English (ASD-STE100). No review labels in
-  comments.
+- Comments and docs: short, plain English (ASD-STE100). Comments have no
+  issue numbers and no review labels. Docs can link to issues.
 - Record a large decision in `docs/adr/NNNN-*.md`.

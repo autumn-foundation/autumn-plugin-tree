@@ -18,8 +18,8 @@
 
   var ROOT = 'ul[data-autumn-tree]';
   var ITEM = '.autumn-tree-row[role="treeitem"]';
-  // Items in a closed branch and loading rows are not reachable. A newer
-  // keyboard core also skips a hidden subtree itself.
+  // Items in a closed branch and loading rows are not reachable. The
+  // keyboard core after autumn-web 0.10 also skips a hidden subtree.
   var REACHABLE = '[role="treeitem"]:not([role="group"][hidden] [role="treeitem"]):not(.autumn-tree-placeholder)';
 
   function closest(el, selector) {
@@ -89,7 +89,10 @@
     li.insertBefore(row, details || source);
     // The "partly selected" text goes out of the row: it is a description.
     var mixed = row.querySelector('.autumn-tree-mixed');
-    if (mixed) li.insertBefore(mixed, row.nextSibling);
+    if (mixed) {
+      mixed.setAttribute('aria-hidden', 'true');
+      li.insertBefore(mixed, row.nextSibling);
+    }
     if (details) {
       var group = child(details, 'ul');
       group.setAttribute('role', 'group');
@@ -136,7 +139,35 @@
     li.textContent = root.getAttribute('data-autumn-tree-loading') || '';
   }
 
+  // Without htmx a lazy branch cannot load. Keep such a tree as the native
+  // list: its links still show the children.
+  function canUpgrade(root) {
+    return !!window.htmx || !root.querySelector('[data-autumn-tree-src]');
+  }
+
+  // A polite status for screen readers: loading, and load errors.
+  function statusOf(root) {
+    var next = root.nextElementSibling;
+    if (next && next.matches('.autumn-tree-status')) return next;
+    var status = document.createElement('span');
+    status.className = 'autumn-tree-status';
+    status.setAttribute('role', 'status');
+    root.parentNode.insertBefore(status, root.nextSibling);
+    return status;
+  }
+
   function upgrade(root) {
+    if (!canUpgrade(root)) return;
+    statusOf(root);
+    // The framework marks the fieldset. The inputs are hidden, so the tree
+    // carries the error state and the hint and error text.
+    var fieldset = closest(root, 'fieldset');
+    if (fieldset && fieldset.getAttribute('aria-invalid') === 'true') {
+      root.setAttribute('aria-invalid', 'true');
+    }
+    if (fieldset && fieldset.hasAttribute('aria-describedby')) {
+      root.setAttribute('aria-describedby', fieldset.getAttribute('aria-describedby'));
+    }
     root.setAttribute('role', 'tree');
     root.classList.add('autumn-tree--enhanced');
     root.setAttribute('data-autumn-roving', REACHABLE);
@@ -154,6 +185,9 @@
     root.querySelectorAll('li.autumn-tree-placeholder').forEach(function (li) {
       upgradePlaceholder(li, root);
     });
+    // A history snapshot can keep a load that did not end.
+    root.querySelectorAll('[data-autumn-tree-src][aria-busy]:not([data-autumn-tree-loaded])')
+      .forEach(function (group) { group.removeAttribute('aria-busy'); });
     // A checked parent checks its new children (lazy loading). Tree order:
     // a parent comes first.
     if (cascades(root)) {
@@ -164,6 +198,10 @@
       });
     }
     refresh(root);
+    // A lazy node that the server opens loads at once.
+    fresh.forEach(function (item) {
+      if (item.getAttribute('aria-expanded') === 'true') load(item);
+    });
   }
 
   // `autumn:init` fires on the page and on each htmx swap, before the core
@@ -198,7 +236,10 @@
       var input = inputOf(item);
       if (!input) continue;
       var value = input.checked ? 'true' : 'false';
-      var kids = derive && !input.disabled ? childItems(item) : [];
+      // A disabled node is frozen. A cut parent does not know all its
+      // children.
+      var partial = item.parentElement.hasAttribute('data-autumn-tree-partial');
+      var kids = derive && !input.disabled && !partial ? childItems(item) : [];
       if (kids.length) {
         var on = kids.filter(function (k) { return state.get(k) === 'true'; }).length;
         var some = kids.some(function (k) { return state.get(k) !== 'false'; });
@@ -219,6 +260,7 @@
     if (!span && mixed) {
       span = document.createElement('span');
       span.className = 'autumn-tree-mixed';
+      span.setAttribute('aria-hidden', 'true');
       span.textContent = root.getAttribute('data-autumn-tree-mixed-text') || '';
       li.insertBefore(span, item.nextSibling);
     }
@@ -237,12 +279,14 @@
     if (isMultiple(root)) {
       var on = item.getAttribute('aria-checked') !== 'true';
       input.checked = on;
-      var group = groupOf(item);
-      if (cascades(root) && group) {
-        itemsIn(group).forEach(function (d) {
-          var di = inputOf(d);
-          if (di && !di.disabled) di.checked = on;
-        });
+      // The cascade stops at a disabled node.
+      if (cascades(root)) {
+        var stack = childItems(item);
+        while (stack.length) {
+          var next = stack.pop();
+          inputOf(next).checked = on;
+          stack = stack.concat(childItems(next));
+        }
       }
     } else {
       if (input.checked) return;
@@ -283,11 +327,9 @@
     if (!group || !root || !group.hasAttribute('data-autumn-tree-src')) return;
     if (group.hasAttribute('data-autumn-tree-loaded') || group.getAttribute('aria-busy') === 'true') return;
     var row = child(group, '.autumn-tree-placeholder');
-    if (!window.htmx) {
-      if (row) row.textContent = root.getAttribute('data-autumn-tree-failed') || '';
-      return;
-    }
-    if (row) row.textContent = root.getAttribute('data-autumn-tree-loading') || '';
+    var loading = root.getAttribute('data-autumn-tree-loading') || '';
+    if (row) row.textContent = loading;
+    statusOf(root).textContent = loading;
     group.setAttribute('aria-busy', 'true');
     group.dispatchEvent(new CustomEvent('autumn-tree:load'));
   }
@@ -297,44 +339,71 @@
     if (item && item.matches && item.matches(ITEM)) load(item);
   });
 
-  // htmx swapped the children in. The core and `autumn:init` ran first.
-  document.addEventListener('htmx:afterSwap', function (e) {
-    var group = e.target;
-    if (!group || !group.hasAttribute || !group.hasAttribute('data-autumn-tree-src')) return;
+  // A group with a lazy URL, from an htmx event target.
+  function lazyGroup(el) {
+    return el && el.hasAttribute && el.hasAttribute('data-autumn-tree-src') ? el : null;
+  }
+
+  // The branch has children, or it is empty: an end node.
+  function loaded(group) {
     var item = itemOf(group.parentElement);
     var root = closest(group, ROOT);
     group.removeAttribute('aria-busy');
     group.setAttribute('data-autumn-tree-loaded', '');
-    // An empty branch is an end node.
     if (item && !group.querySelector(ITEM)) {
       item.removeAttribute('aria-expanded');
       item.removeAttribute('aria-owns');
       group.remove();
     }
-    if (root) refresh(root);
-  });
+    if (root) {
+      statusOf(root).textContent = '';
+      refresh(root);
+    }
+  }
 
-  function failed(e) {
-    var group = e.target;
-    if (!group || !group.hasAttribute || !group.hasAttribute('data-autumn-tree-src')) return;
+  function failed(group) {
     var root = closest(group, ROOT);
     group.removeAttribute('aria-busy');
+    if (!root) return;
+    var text = root.getAttribute('data-autumn-tree-failed') || '';
     var row = child(group, '.autumn-tree-placeholder');
-    if (row && root) row.textContent = root.getAttribute('data-autumn-tree-failed') || '';
+    if (row) row.textContent = text;
+    statusOf(root).textContent = text;
   }
-  document.addEventListener('htmx:responseError', failed);
-  document.addEventListener('htmx:sendError', failed);
+
+  // htmx swapped the children in. The core and `autumn:init` ran first.
+  document.addEventListener('htmx:afterSwap', function (e) {
+    var group = lazyGroup(e.target);
+    if (group) loaded(group);
+  });
+
+  // Each request ends here: a swap, no swap (204), an error, a timeout or
+  // an abort.
+  document.addEventListener('htmx:afterRequest', function (e) {
+    var group = lazyGroup(e.target);
+    if (!group || group.getAttribute('aria-busy') !== 'true') return;
+    var xhr = e.detail && e.detail.xhr;
+    if (e.detail && e.detail.successful && xhr && xhr.status === 204) loaded(group);
+    else if (!(e.detail && e.detail.successful)) failed(group);
+  });
+
+  // htmx refuses the URL, for example another origin.
+  document.addEventListener('htmx:invalidPath', function (e) {
+    var group = lazyGroup(e.target);
+    if (group) failed(group);
+  });
 
   // ── Pointer and keys ─────────────────────────────────────────────────
 
   document.addEventListener('click', function (e) {
     var item = closest(e.target, '.autumn-tree--enhanced ' + ITEM);
-    if (!item || item.getAttribute('aria-disabled') === 'true') return;
+    if (!item) return;
+    // A disabled branch opens, but it does not select.
     if (closest(e.target, '.autumn-tree-toggle') && item.hasAttribute('aria-expanded')) {
       setOpen(item, item.getAttribute('aria-expanded') !== 'true');
       return;
     }
-    activate(item);
+    if (item.getAttribute('aria-disabled') !== 'true') activate(item);
   });
 
   // Enter and Space select. Ctrl+A checks all. The core owns the arrows.

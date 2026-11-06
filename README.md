@@ -48,6 +48,7 @@ struct Scope {
     folders: Vec<String>,
 }
 
+let changeset = Changeset::new(Scope { folders: Vec::new() });
 let tree = TreeField::multiple([
     TreeNode::new("src", "src").children([
         TreeNode::new("lib", "lib.rs"),
@@ -62,7 +63,8 @@ With `form_for`, use `.override_field("folders", FieldControl::custom(tree))`.
 
 ### Check the post
 
-Always check the posted keys on the server:
+Always check the posted keys on the server. Build the tree with all the
+nodes that the user can see, the lazy ones too:
 
 ```rust
 let keys = tree.resolve(&form.folders);
@@ -70,8 +72,12 @@ let keys = tree.resolve(&form.folders);
 
 `resolve` keeps only keys of the tree that are not disabled. With
 `Cascade::Descendants` (the default), a parent adds its children, and a
-parent with all children checked is added. A single tree gives one key or
-none.
+parent with all children checked is added. A disabled node is frozen: a
+cascade does not go through it. A single tree gives one key or none. Keys
+must be unique in one tree.
+
+The script sends a `change` event from the input that the user changed.
+Listen on the form to get each change.
 
 ### Options
 
@@ -93,6 +99,7 @@ none.
 | `.child(node)`, `.children(nodes)` | Add child nodes. |
 | `.lazy(url)` | Load the children from `url` when the node opens. |
 | `.href(url)` | The link of the node in `nav_tree`. |
+| `.link_text(text)` | The text of the own link of a parent in `nav_tree`. |
 | `.disabled()` | The node cannot change. |
 
 ### Lazy children
@@ -100,21 +107,34 @@ none.
 The children load with htmx. Return `TreeField::branch` from the route:
 
 ```rust
+#[derive(serde::Deserialize)]
+struct Branch {
+    node: String,
+}
+
 #[get("/folders/children")]
-async fn children(Query(q): Query<Node>) -> AutumnResult<Markup> {
+async fn children(Query(branch): Query<Branch>) -> AutumnResult<Markup> {
     // Check that the user can see these nodes.
-    let nodes = load_children(&q.node).await?;
-    Ok(tree.branch("folders", q.level, &nodes, &checked))
+    let nodes = load_children(&branch.node).await?;
+    Ok(tree().branch("folders", 2, &nodes, &[] as &[&str]))
 }
 ```
 
-With JavaScript off, the node has a link to the same URL. Return a full
-page when the request has no `HX-Request` header.
+The second argument is the level of the children. The root level is 1.
+The last argument is the checked keys. A checked parent checks its new
+children in the browser.
+
+With JavaScript off, the node links to the same URL. To show a full page
+there, check the `HX-Request` header and put the fragment in your layout.
+Without htmx, a tree with a lazy node stays a native list.
+
+`examples/files.rs` is a complete app: `cargo run --example files`.
 
 ## Navigation tree
 
 ```rust
-use autumn_plugin_tree::{TreeKey, TreeNode, nav_tree};
+use autumn_plugin_tree::{TreeKey, nav_tree};
+use autumn_web::form::FieldOptions;
 
 let html = nav_tree("Docs", &nodes, Some(&TreeKey::new("forms")), &FieldOptions::new());
 ```
@@ -137,6 +157,7 @@ Focus does not change the selection.
 **Note:** ArrowRight, ArrowLeft and `*` need the tree keys of the keyboard
 core (autumn-foundation/autumn#3417). They are not in `autumn-web` 0.10.0.
 With 0.10.0 the other keys work, and the chevron opens and closes a node.
+With 0.10.0 a disabled node cannot take focus; use the chevron.
 
 ## Without JavaScript
 
@@ -163,16 +184,17 @@ cargo test
 ```
 
 ```bash
-cargo test --features system-tests --test browser -- --include-ignored
+cargo test --features system-tests --test browser -- --include-ignored --test-threads=1
 ```
 
 The browser tests need Chromium. The tree-key tests need the keyboard core
-from autumn `main`:
+from the autumn default branch, `trunk-dev`:
 
 ```bash
 cargo test --features system-tests,core-tree-keys --test browser \
   --config 'patch.crates-io.autumn-web.git="https://github.com/autumn-foundation/autumn"' \
-  -- --include-ignored
+  --config 'patch.crates-io.autumn-web.branch="trunk-dev"' \
+  -- --include-ignored --test-threads=1
 ```
 
 ## License

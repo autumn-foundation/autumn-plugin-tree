@@ -63,7 +63,7 @@
     display: grid;
     grid-template-columns: auto 1fr;
     align-items: start;
-    column-gap: var(--space-1);
+    column-gap: var(--space-2);
 }
 
 /* The input lines up with the first row, not with the open branch. */
@@ -95,12 +95,17 @@
     transform: rotate(-45deg);
 }
 
-[dir="rtl"] .autumn-tree-details > .autumn-tree-row::before {
-    transform: rotate(135deg);
-}
-
 .autumn-tree-details[open] > .autumn-tree-row::before {
     transform: rotate(45deg);
+}
+
+/* In RTL the border sides change places, so the turns change too. */
+[dir="rtl"] .autumn-tree-details > .autumn-tree-row::before {
+    transform: rotate(45deg);
+}
+
+[dir="rtl"] .autumn-tree-details[open] > .autumn-tree-row::before {
+    transform: rotate(-45deg);
 }
 
 .autumn-tree-placeholder {
@@ -136,6 +141,10 @@
     box-shadow: inset 3px 0 0 var(--primary);
 }
 
+[dir="rtl"] .autumn-tree--enhanced .autumn-tree-row[aria-selected="true"] {
+    box-shadow: inset -3px 0 0 var(--primary);
+}
+
 .autumn-tree--enhanced .autumn-tree-row[aria-disabled="true"] {
     color: var(--text-muted);
     cursor: not-allowed;
@@ -147,8 +156,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1rem;
-    height: 1rem;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
 }
 
 .autumn-tree-row[aria-expanded] > .autumn-tree-toggle::before {
@@ -160,12 +170,16 @@
     transform: rotate(-45deg);
 }
 
-[dir="rtl"] .autumn-tree-row[aria-expanded] > .autumn-tree-toggle::before {
-    transform: rotate(135deg);
-}
-
 .autumn-tree-row[aria-expanded="true"] > .autumn-tree-toggle::before {
     transform: rotate(45deg);
+}
+
+[dir="rtl"] .autumn-tree-row[aria-expanded] > .autumn-tree-toggle::before {
+    transform: rotate(45deg);
+}
+
+[dir="rtl"] .autumn-tree-row[aria-expanded="true"] > .autumn-tree-toggle::before {
+    transform: rotate(-45deg);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -230,9 +244,34 @@
     cursor: progress;
 }
 
+/* The status for screen readers: loading, and load errors. */
+.autumn-tree-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Forced colors: a border shows selection, an outline shows focus. */
 @media (forced-colors: active) {
-    .autumn-tree--enhanced .autumn-tree-row[aria-selected="true"] {
-        outline: 2px solid Highlight;
+    .autumn-tree--enhanced .autumn-tree-row[aria-selected="true"],
+    .autumn-tree-nav-link[aria-current="page"] {
+        border: 2px solid Highlight;
+    }
+
+    .autumn-tree--enhanced .autumn-tree-row:focus-visible {
+        outline: 3px solid CanvasText;
+        outline-offset: 1px;
+    }
+
+    .autumn-tree--enhanced .autumn-tree-row[aria-disabled="true"],
+    .autumn-tree-nav-text {
+        color: GrayText;
     }
 }
 
@@ -274,6 +313,35 @@
 .autumn-tree-nav-summary {
     cursor: pointer;
     font-weight: var(--font-weight-semibold);
+    list-style: none;
+}
+
+.autumn-tree-nav-summary::-webkit-details-marker {
+    display: none;
+}
+
+/* A flex summary has no marker, so draw the chevron. */
+.autumn-tree-nav-summary::before {
+    content: "";
+    flex: none;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-inline-end: var(--space-2);
+    border-inline-end: 2px solid var(--text-muted);
+    border-block-end: 2px solid var(--text-muted);
+    transform: rotate(-45deg);
+}
+
+.autumn-tree-nav-details[open] > .autumn-tree-nav-summary::before {
+    transform: rotate(45deg);
+}
+
+[dir="rtl"] .autumn-tree-nav-summary::before {
+    transform: rotate(45deg);
+}
+
+[dir="rtl"] .autumn-tree-nav-details[open] > .autumn-tree-nav-summary::before {
+    transform: rotate(-45deg);
 }
 
 .autumn-tree-nav-link:hover,
@@ -292,4 +360,8 @@
     background: var(--primary-light);
     font-weight: var(--font-weight-semibold);
     box-shadow: inset 3px 0 0 var(--primary);
+}
+
+[dir="rtl"] .autumn-tree-nav-link[aria-current="page"] {
+    box-shadow: inset -3px 0 0 var(--primary);
 }

@@ -13,6 +13,7 @@
 
 mod budget;
 mod field;
+mod flat;
 mod href;
 mod key;
 mod nav;

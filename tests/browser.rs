@@ -67,6 +67,23 @@ fn layout(body: &Markup) -> Markup {
     }
 }
 
+/// A tree with a disabled parent, a 204 branch, a branch the server opens,
+/// a branch that fails, and a form error.
+fn scope_tree() -> TreeField {
+    TreeField::multiple([
+        TreeNode::new("g", "G").children([
+            TreeNode::new("d", "D")
+                .disabled()
+                .children([TreeNode::new("x", "X"), TreeNode::new("y", "Y")]),
+            TreeNode::new("c", "C"),
+        ]),
+        TreeNode::new("none", "none").lazy("/tree/nocontent"),
+        TreeNode::new("auto", "auto").lazy("/tree/scope-children"),
+        TreeNode::new("broke", "broke").lazy("/tree/broken"),
+    ])
+    .expanded(["auto"])
+}
+
 #[get("/tree")]
 async fn tree_page() -> Markup {
     let single = Changeset::new(Pick {
@@ -74,6 +91,8 @@ async fn tree_page() -> Markup {
         ..Pick::default()
     });
     let multiple = Changeset::new(Pick::default());
+    let mut scope = Changeset::new(Pick::default());
+    scope.add_error("scope", "Pick a scope.");
     layout(&html! {
         h1 { "Trees" }
         form id="single-form" method="get" action="/done" {
@@ -83,10 +102,53 @@ async fn tree_page() -> Markup {
             (tree_field(&multiple, "files", "Files", &TreeField::multiple(files()), &FieldOptions::new()))
             button type="submit" { "Save" }
         }
+        form id="scope-form" method="get" action="/done" {
+            (tree_field(&scope, "scope", "Scope", &scope_tree(), &FieldOptions::new()))
+        }
         (nav_tree("Docs", &[
             TreeNode::new("guide", "Guide").child(TreeNode::new("start", "Start").href("/guide/start")),
         ], Some(&TreeKey::new("start")), &FieldOptions::new()))
     })
+}
+
+#[get("/tree/nocontent")]
+async fn tree_nocontent() -> StatusCode {
+    StatusCode::NO_CONTENT
+}
+
+#[get("/tree/scope-children")]
+async fn tree_scope_children() -> Markup {
+    TreeField::multiple(Vec::new()).branch(
+        "scope",
+        2,
+        &[TreeNode::new("auto-a", "auto a")],
+        &[] as &[&str],
+    )
+}
+
+/// A page without htmx: a tree with a lazy branch stays a native list, and
+/// a tree without one upgrades.
+#[get("/tree/no-htmx")]
+async fn tree_no_htmx() -> Markup {
+    let changeset = Changeset::new(Pick::default());
+    let plain = TreeField::multiple([TreeNode::new("p", "P").child(TreeNode::new("q", "Q"))]);
+    html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                title { "No htmx" }
+                script src="/static/js/autumn-widgets.js" defer {}
+                (pack().head())
+            }
+            body {
+                main {
+                    (tree_field(&changeset, "files", "Files", &TreeField::multiple(files()), &FieldOptions::new()))
+                    (tree_field(&changeset, "plain", "Plain", &plain, &FieldOptions::new()))
+                }
+            }
+        }
+    }
 }
 
 static CHILD_LOADS: AtomicUsize = AtomicUsize::new(0);
@@ -131,6 +193,8 @@ async fn start() -> (SystemTestRunner, Page) {
                 tree_children,
                 tree_broken,
                 tree_empty,
+                tree_nocontent,
+                tree_scope_children,
                 done
             ])
             .plugin_assets(&autumn_plugin_tree::ASSETS)
@@ -144,7 +208,7 @@ async fn start() -> (SystemTestRunner, Page) {
     assert!(
         poll(
             &page,
-            "document.querySelectorAll('[role=tree]').length === 2"
+            "document.querySelectorAll('[role=tree]').length === 3"
         )
         .await,
         "the trees did not upgrade"
@@ -644,6 +708,8 @@ async fn with_javascript_off_the_tree_is_a_native_list() {
                 tree_children,
                 tree_broken,
                 tree_empty,
+                tree_nocontent,
+                tree_scope_children,
                 done
             ])
             .plugin_assets(&autumn_plugin_tree::ASSETS)
@@ -716,6 +782,147 @@ async fn the_pack_passes_the_browser_gate() {
     assert!(report.passed(), "{}", report.to_text_report());
 }
 
+// ── Review fixes ────────────────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn a_disabled_parent_opens_and_freezes_the_cascade() {
+    let (_runner, page) = start().await;
+    click_toggle(&page, "scope-n-g-node").await;
+    assert_eq!(attr(&page, "scope-n-d-node", "aria-disabled").await, "true");
+    click_toggle(&page, "scope-n-d-node").await;
+    assert_eq!(attr(&page, "scope-n-d-node", "aria-expanded").await, "true");
+    // A check on `g` does not go through the disabled `d`.
+    page.click("#scope-n-g-node > .autumn-tree-label")
+        .await
+        .unwrap();
+    assert_eq!(attr(&page, "scope-n-g-node", "aria-checked").await, "true");
+    assert_eq!(attr(&page, "scope-n-c-node", "aria-checked").await, "true");
+    assert_eq!(attr(&page, "scope-n-x-node", "aria-checked").await, "false");
+    // `x` under the frozen `d` does not make `d` mixed.
+    page.click("#scope-n-x-node > .autumn-tree-label")
+        .await
+        .unwrap();
+    assert_eq!(attr(&page, "scope-n-d-node", "aria-checked").await, "false");
+    // A click on the disabled row does not check it.
+    page.click("#scope-n-d-node > .autumn-tree-label")
+        .await
+        .unwrap();
+    assert_eq!(attr(&page, "scope-n-d-node", "aria-checked").await, "false");
+}
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn a_204_branch_becomes_an_end_node() {
+    let (_runner, page) = start().await;
+    click_toggle(&page, "scope-n-none-node").await;
+    assert!(
+        poll(
+            &page,
+            "!document.getElementById('scope-n-none-node').hasAttribute('aria-expanded')"
+        )
+        .await,
+        "the 204 branch kept aria-expanded"
+    );
+    assert!(!eval_bool(&page, "!!document.querySelector('#scope-tree [aria-busy]')").await);
+}
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn a_lazy_branch_the_server_opens_loads_at_once() {
+    let (_runner, page) = start().await;
+    assert!(
+        poll(
+            &page,
+            "document.getElementById('scope-n-auto_2da-node')?.getAttribute('role') === 'treeitem'"
+        )
+        .await,
+        "the open lazy branch did not load"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn a_failed_load_writes_the_status() {
+    let (_runner, page) = start().await;
+    click_toggle(&page, "scope-n-broke-node").await;
+    assert!(
+        poll(
+            &page,
+            "document.querySelector('#scope-tree + .autumn-tree-status[role=status]').textContent.startsWith('Could not load')"
+        )
+        .await,
+        "no status text"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn the_tree_carries_the_form_error() {
+    let (_runner, page) = start().await;
+    assert_eq!(attr(&page, "scope-tree", "aria-invalid").await, "true");
+    let described = attr(&page, "scope-tree", "aria-describedby").await;
+    assert!(described.contains("scope-error"), "{described}");
+    assert_eq!(attr(&page, "files-tree", "aria-invalid").await, "null");
+}
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn the_mixed_note_is_hidden_from_browse_mode() {
+    let (_runner, page) = start().await;
+    click_toggle(&page, "files-n-src-node").await;
+    focus(&page, "files-n-lib-node").await;
+    page.press(" ").await.unwrap();
+    assert_eq!(
+        attr(&page, "files-n-src-node", "aria-checked").await,
+        "mixed"
+    );
+    assert!(
+        eval_bool(
+            &page,
+            "(() => { const id = document.getElementById('files-n-src-node').getAttribute('aria-describedby'); \
+             return document.getElementById(id).getAttribute('aria-hidden') === 'true'; })()"
+        )
+        .await
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn without_htmx_a_lazy_tree_stays_native() {
+    let runner = Box::pin(
+        SystemTest::new()
+            .routes(routes![tree_no_htmx])
+            .plugin_assets(&autumn_plugin_tree::ASSETS)
+            .build(),
+    )
+    .await
+    .expect("start runner");
+    let page = runner.page().await.expect("page");
+    page.visit("/tree/no-htmx").await.unwrap();
+    assert!(
+        poll(
+            &page,
+            "document.getElementById('plain-tree')?.getAttribute('role') === 'tree'"
+        )
+        .await
+    );
+    assert!(
+        eval_bool(
+            &page,
+            "!document.getElementById('files-tree').hasAttribute('role')"
+        )
+        .await
+    );
+    assert!(
+        eval_bool(
+            &page,
+            "!!document.querySelector('#files-n-docs-group .autumn-tree-placeholder a[href]')"
+        )
+        .await
+    );
+}
+
 // ── Tree keys of the keyboard core ──────────────────────────────────────
 
 #[cfg(feature = "core-tree-keys")]
@@ -765,6 +972,25 @@ mod tree_keys {
         );
         page.press("ArrowRight").await.unwrap();
         assert_eq!(focused(&page).await, "files-n-guide-node");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Chromium"]
+    async fn a_disabled_parent_is_reachable_and_opens_with_right() {
+        let (_runner, page) = start().await;
+        focus(&page, "scope-n-g-node").await;
+        page.press("ArrowRight").await.unwrap();
+        page.press("ArrowRight").await.unwrap();
+        assert_eq!(focused(&page).await, "scope-n-d-node");
+        page.press("ArrowRight").await.unwrap();
+        assert_eq!(attr(&page, "scope-n-d-node", "aria-expanded").await, "true");
+        page.press("ArrowRight").await.unwrap();
+        assert_eq!(focused(&page).await, "scope-n-x-node");
+        page.press("ArrowLeft").await.unwrap();
+        assert_eq!(focused(&page).await, "scope-n-d-node");
+        // Space does not check a disabled item.
+        page.press(" ").await.unwrap();
+        assert_eq!(attr(&page, "scope-n-d-node", "aria-checked").await, "false");
     }
 
     #[tokio::test]

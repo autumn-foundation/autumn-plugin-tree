@@ -54,7 +54,8 @@ We wrote down all ideas first. We did not judge them.
 | Tri-state parents, cascade or independent | Yes | All peers with checkboxes have it. |
 | Lazy children through htmx | Yes | Primer and Web Awesome have it. It is the answer for large trees. |
 | Server-side resolve of submitted keys | Yes | Security: the server checks each key. |
-| Guide lines, compact density, icons | Yes | Small CSS. Common in peers. |
+| Guide lines, compact density | Yes | Small CSS. Common in peers. |
+| Icons before the label | Later | The app can put an icon in the label text. |
 | Depth and node budgets | Yes | Security: a deep tree must not stop the server. |
 | "Load more" rows, search, expand-all buttons | Later | Not in the issue. The app can add buttons. |
 | Virtual scrolling, drag and drop, rename, row actions, `treegrid` | No | Outliers. They need much JS. Row actions break the tree pattern. |
@@ -67,7 +68,7 @@ Question: "How can we make this tree fail?" Each failure gives a rule.
 | How to fail | Rule |
 |---|---|
 | Send `role="tree"` and the script does not load. The user hears a tree, but the keys do nothing. | The server sends a `<details>` list. The script adds the roles. |
-| Down Arrow goes into a closed branch. Focus goes to an item that is not visible. | The keyboard core skips items in a `hidden` subtree. |
+| ArrowDown goes into a closed branch. Focus goes to an item that is not visible. | The keyboard core skips items in a `hidden` subtree. |
 | Put a checkbox or link in each tree item. Screen readers read an empty tab stop. | An upgraded item has no focusable child. The native input stays, but it is `hidden`. |
 | Let selection follow focus. Each Arrow key changes the form value. | Enter, Space and click select. Focus does not select. |
 | Write `style="--depth:3"` for indentation. A strict CSP blocks it. | Indentation comes from nested padding in the pack CSS. |
@@ -85,7 +86,7 @@ Question: "How can we make this tree fail?" Each failure gives a rule.
 **White (facts).** The APG tree pattern is stable. Support in screen readers
 is uneven. GitHub had to declare `aria-level`, `aria-setsize` and
 `aria-posinset`, and name each item with `aria-labelledby`. The keyboard core
-has `[role=treeitem]` in its default items. It does not skip items in a closed
+in `autumn-web` 0.10.0 has `[role=treeitem]` in its default items. It does not skip items in a closed
 branch, and it has no Right, Left or `*` for trees. `autumn-web` 0.10.0 on
 crates.io has the widget pack seam.
 
@@ -99,7 +100,7 @@ parent.
   Enter, Space and click work with `autumn-web` 0.10. The core PR adds the
   other keys and their browser tests.
 - `aria-checked="mixed"` on a tree item is an open spec question
-  (w3c/aria#1640). Mitigation: a hidden "n of m" text is the fallback.
+  (w3c/aria#1640). Mitigation: a hidden "Partly selected" text is the fallback.
 - The upgrade moves DOM nodes. htmx attributes must stay on the `ul`, not on
   `<details>`.
 
@@ -140,12 +141,12 @@ Cascade::{ Descendants, Independent }
 ### Server markup (JavaScript off)
 
 ```html
-<ul class="autumn-tree" aria-label="Folders" data-autumn-tree="multiple">
-  <li class="autumn-tree-node" id="f-src-node" aria-level="1" aria-setsize="1" aria-posinset="1">
-    <input type="checkbox" id="f-src" name="f" value="src" aria-labelledby="f-src-label">
+<ul class="autumn-tree-root" id="f-tree" aria-label="Folders" data-autumn-tree="multiple">
+  <li class="autumn-tree-node" id="f-n-src-node" aria-level="1" aria-setsize="1" aria-posinset="1">
+    <input type="checkbox" id="f-n-src" name="f" value="src" aria-labelledby="f-n-src-label">
     <details class="autumn-tree-details" open>
-      <summary class="autumn-tree-row"><span class="autumn-tree-label" id="f-src-label">src</span></summary>
-      <ul class="autumn-tree-group">…</ul>
+      <summary class="autumn-tree-row"><span class="autumn-tree-label" id="f-n-src-label">src</span></summary>
+      <ul class="autumn-tree-group" id="f-n-src-group">…</ul>
     </details>
   </li>
 </ul>

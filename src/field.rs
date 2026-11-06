@@ -10,10 +10,9 @@ use std::collections::{BTreeSet, HashSet};
 use autumn_web::form::{Changeset, FieldContext, FieldOptions, FieldRenderer};
 use maud::{Markup, PreEscaped, html};
 
-use crate::budget::{Budget, MAX_DEPTH, MAX_NODES, can_descend};
-use crate::href::safe_href;
+use crate::flat::Flat;
 use crate::key::TreeKey;
-use crate::node::{Children, TreeNode};
+use crate::node::TreeNode;
 
 /// How a check on a parent node changes the other nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -171,11 +170,12 @@ impl TreeField {
     /// and a parent with all children checked is added. A lazy parent stays
     /// as submitted: the app owns its children.
     ///
-    /// The check reads the same nodes as the renderer: [`MAX_DEPTH`] levels
-    /// and [`MAX_NODES`] nodes.
+    /// The check reads the same nodes as the renderer: [`MAX_DEPTH`](crate::MAX_DEPTH)
+    /// levels and [`MAX_NODES`](crate::MAX_NODES) nodes. A disabled node
+    /// keeps its own state, and a cascade does not go through it.
     #[must_use]
     pub fn resolve<S: AsRef<str>>(&self, submitted: &[S]) -> Vec<TreeKey> {
-        let flat = Flat::new(&self.nodes);
+        let flat = Flat::new(&self.nodes, 1);
         let enabled = |i: &usize| !flat.nodes[*i].node.is_disabled();
         if !self.multiple {
             return submitted
@@ -185,27 +185,28 @@ impl TreeField {
                 .into_iter()
                 .collect();
         }
-        let wanted: HashSet<&str> = submitted.iter().map(AsRef::as_ref).collect();
-        let mut on: Vec<bool> = flat
-            .nodes
-            .iter()
-            .map(|n| !n.node.is_disabled() && wanted.contains(n.node.key().as_str()))
-            .collect();
+        let mut on = vec![false; flat.nodes.len()];
+        for key in submitted {
+            if let Some(i) = flat.find(key.as_ref()).filter(enabled) {
+                on[i] = true;
+            }
+        }
         if self.cascades() {
             // Down: a checked parent checks its enabled children. A parent
             // comes before its children in tree order.
             for i in 0..flat.nodes.len() {
                 if let Some(parent) = flat.nodes[i].parent
                     && on[parent]
-                    && !flat.nodes[i].node.is_disabled()
+                    && enabled(&i)
                 {
                     on[i] = true;
                 }
             }
-            // Up: a parent with all enabled children checked is checked.
+            // Up: a parent with all enabled children checked is checked. A
+            // cut parent is not: the cut children are unknown.
             for i in (0..flat.nodes.len()).rev() {
                 let entry = &flat.nodes[i];
-                if entry.node.is_disabled() {
+                if !enabled(&i) || entry.truncated {
                     continue;
                 }
                 let mut children = entry.children.iter().filter(|c| enabled(c)).peekable();
@@ -214,10 +215,11 @@ impl TreeField {
                 }
             }
         }
+        let mut seen = HashSet::new();
         flat.nodes
             .iter()
             .zip(on)
-            .filter(|(_, on)| *on)
+            .filter(|(n, on)| *on && seen.insert(n.node.key().as_str()))
             .map(|(n, _)| n.node.key().clone())
             .collect()
     }
@@ -238,15 +240,15 @@ impl TreeField {
     ) -> Markup {
         let values: HashSet<&str> = values.iter().map(AsRef::as_ref).collect();
         let writer = InputWriter::Plain { field };
-        let mut render = Render {
+        let flat = Flat::new(nodes, level.max(1));
+        let render = Render {
             tree: self,
+            flat: &flat,
             field,
             values: &values,
             input: &writer,
-            budget: Budget::new(),
         };
-        let level = level.max(1);
-        render.items(nodes, level, false).markup
+        render.items(&flat.roots, false).markup
     }
 
     fn render_field(&self, field: &FieldContext<'_>) -> Markup {
@@ -259,14 +261,15 @@ impl TreeField {
             context: field,
             strip_required: self.multiple && field.is_required(),
         };
-        let mut render = Render {
+        let flat = Flat::new(&self.nodes, 1);
+        let render = Render {
             tree: self,
+            flat: &flat,
             field: field.name(),
             values: &values,
             input: &writer,
-            budget: Budget::new(),
         };
-        let items = render.items(&self.nodes, 1, false).markup;
+        let items = render.items(&flat.roots, false).markup;
         let mut class = String::from("autumn-tree-root");
         if self.lines {
             class.push_str(" autumn-tree--lines");
@@ -321,52 +324,6 @@ pub fn tree_field<T: serde::Serialize>(
     autumn_web::form::custom_input_with(changeset, field, label, tree, options)
 }
 
-// ── Flat view for resolve ───────────────────────────────────────────────
-
-/// One node in tree order, with its parent and children indexes.
-struct FlatNode<'a> {
-    node: &'a TreeNode,
-    parent: Option<usize>,
-    children: Vec<usize>,
-}
-
-/// The nodes in tree order, inside the render budgets.
-struct Flat<'a> {
-    nodes: Vec<FlatNode<'a>>,
-}
-
-impl<'a> Flat<'a> {
-    fn new(roots: &'a [TreeNode]) -> Self {
-        let mut flat = Self { nodes: Vec::new() };
-        flat.add(roots, None, 1);
-        flat
-    }
-
-    fn add(&mut self, nodes: &'a [TreeNode], parent: Option<usize>, depth: usize) {
-        for node in nodes {
-            if self.nodes.len() >= MAX_NODES {
-                return;
-            }
-            let index = self.nodes.len();
-            self.nodes.push(FlatNode {
-                node,
-                parent,
-                children: Vec::new(),
-            });
-            if let Some(parent) = parent {
-                self.nodes[parent].children.push(index);
-            }
-            if can_descend(depth) {
-                self.add(node.loaded(), Some(index), depth + 1);
-            }
-        }
-    }
-
-    fn find(&self, key: &str) -> Option<usize> {
-        self.nodes.iter().position(|n| n.node.key().as_str() == key)
-    }
-}
-
 // ── Rendering ───────────────────────────────────────────────────────────
 
 /// The check state of a node.
@@ -375,6 +332,12 @@ enum Check {
     Off,
     On,
     Mixed,
+}
+
+impl From<bool> for Check {
+    fn from(on: bool) -> Self {
+        if on { Self::On } else { Self::Off }
+    }
 }
 
 /// How the renderer writes one input.
@@ -402,7 +365,8 @@ impl InputWriter<'_> {
                 if !*strip_required {
                     return input;
                 }
-                // `group_item` writes `required` just after `name`.
+                // autumn-web 0.10 writes `required` on each box, just after
+                // `name`. Later releases do not, so this does nothing there.
                 let name = html! { (context.name()) }.into_string();
                 let with = format!(" name=\"{name}\" required");
                 let without = format!(" name=\"{name}\"");
@@ -437,35 +401,25 @@ struct Rendered {
 
 struct Render<'a> {
     tree: &'a TreeField,
+    flat: &'a Flat<'a>,
     field: &'a str,
     values: &'a HashSet<&'a str>,
     input: &'a InputWriter<'a>,
-    budget: Budget,
 }
 
 impl Render<'_> {
-    /// Render `nodes` at `level`. `forced` is `true` when a checked parent
-    /// cascades to them.
-    fn items(&mut self, nodes: &[TreeNode], level: usize, forced: bool) -> Rendered {
+    /// Render the nodes at `indexes`: one level. `forced` is `true` when a
+    /// checked parent cascades to them.
+    fn items(&self, indexes: &[usize], forced: bool) -> Rendered {
         let mut markup = String::new();
-        let mut states = Vec::with_capacity(nodes.len());
+        let mut states = Vec::with_capacity(indexes.len());
         let mut any_checked = false;
-        if level > MAX_DEPTH {
-            return Rendered {
-                markup: PreEscaped(markup),
-                check: None,
-                any_checked,
-            };
-        }
-        let size = nodes.len().to_string();
-        for (index, node) in nodes.iter().enumerate() {
-            if !self.budget.take() {
-                break;
-            }
-            let item = self.item(node, level, index + 1, &size, forced);
+        let size = indexes.len().to_string();
+        for (position, index) in indexes.iter().enumerate() {
+            let item = self.item(*index, position + 1, &size, forced);
             markup.push_str(&item.markup.into_string());
             any_checked |= item.checked_below || item.check != Check::Off;
-            if !node.is_disabled() {
+            if !self.flat.nodes[*index].node.is_disabled() {
                 states.push(item.check);
             }
         }
@@ -477,75 +431,51 @@ impl Render<'_> {
     }
 
     /// Render one node.
-    fn item(
-        &mut self,
-        node: &TreeNode,
-        level: usize,
-        position: usize,
-        size: &str,
-        forced: bool,
-    ) -> Item {
-        let own = self.values.contains(node.key().as_str());
+    fn item(&self, index: usize, position: usize, size: &str, forced: bool) -> Item {
+        let entry = &self.flat.nodes[index];
+        let node = entry.node;
+        let place = Place {
+            level: entry.level,
+            position,
+            size,
+        };
         let cascades = self.tree.cascades();
-        let on = own || (forced && cascades && !node.is_disabled());
-        let lazy = match node.child_nodes() {
-            Children::Lazy(url) => safe_href(url),
-            _ => None,
+        // A disabled node is frozen: it keeps its own state, and a cascade
+        // does not go through it.
+        let frozen = node.is_disabled();
+        let on = self.values.contains(node.key().as_str()) || (forced && cascades && !frozen);
+        let (body, check, checked_below) = match entry.lazy {
+            Some(url) => (Body::Lazy(url), Check::from(on), false),
+            None if entry.children.is_empty() => (Body::Leaf, Check::from(on), false),
+            None => {
+                let below = self.items(&entry.children, cascades && on && !frozen);
+                // A cut parent keeps its own state: the cut children are
+                // unknown.
+                let check = if on {
+                    Check::On
+                } else if cascades && !frozen && !entry.truncated {
+                    below.check.unwrap_or(Check::Off)
+                } else {
+                    Check::Off
+                };
+                (Body::Group(below.markup), check, below.any_checked)
+            }
         };
-        let children = node.loaded();
-        let body = if !can_descend(level) {
-            Body::Leaf
-        } else if let Some(url) = lazy {
-            Body::Lazy(url)
-        } else if children.is_empty() {
-            Body::Leaf
-        } else {
-            let below = self.items(children, level + 1, cascades && on);
-            let check = if on {
-                Check::On
-            } else if cascades {
-                below.check.unwrap_or(Check::Off)
-            } else {
-                Check::Off
-            };
-            let markup = self.node(
-                node,
-                &Place {
-                    level,
-                    position,
-                    size,
-                },
-                check,
-                Body::Group(below.markup),
-                below.any_checked,
-            );
-            return Item {
-                markup,
-                check,
-                checked_below: below.any_checked,
-            };
-        };
-        let check = if on { Check::On } else { Check::Off };
-        let markup = self.node(
-            node,
-            &Place {
-                level,
-                position,
-                size,
-            },
-            check,
-            body,
-            false,
-        );
+        let markup = self.node(node, &place, check, body, checked_below, entry.truncated);
         Item {
             markup,
             check,
-            checked_below: false,
+            checked_below,
         }
     }
 
     /// Write the `<li>` of one node: the input, then a label or a
-    /// `<details>` with the children.
+    /// `<details>` with the children. `partial` marks a parent whose
+    /// children the node budget cut.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "each argument is one part of the node state"
+    )]
     fn node(
         &self,
         node: &TreeNode,
@@ -553,16 +483,26 @@ impl Render<'_> {
         check: Check,
         body: Body<'_>,
         open: bool,
+        partial: bool,
     ) -> Markup {
         let tree = self.tree;
         let suffix = format!("n-{}", node.key().token());
         let base = format!("{}-{suffix}", self.field);
         let label_id = format!("{base}-label");
+        let mixed_id = format!("{base}-mixed");
+        let mixed = check == Check::Mixed;
+        // With JavaScript off, the "partly selected" text is part of the
+        // input name.
+        let labelled_by = if mixed {
+            format!("{label_id} {mixed_id}")
+        } else {
+            label_id.clone()
+        };
         let mut attrs: Vec<(&str, &str)> = vec![
             ("type", if tree.multiple { "checkbox" } else { "radio" }),
             ("value", node.key().as_str()),
             ("class", "autumn-tree-input"),
-            ("aria-labelledby", &label_id),
+            ("aria-labelledby", &labelled_by),
         ];
         if check == Check::On {
             attrs.push(("checked", ""));
@@ -571,7 +511,6 @@ impl Render<'_> {
             attrs.push(("disabled", ""));
         }
         let input = self.input.write(&suffix, &attrs);
-        let mixed = check == Check::Mixed;
         let open = open || tree.expanded.contains(node.key());
         let label = html! { span class="autumn-tree-label" id=(label_id) { (node.label()) } };
         let group_id = format!("{base}-group");
@@ -579,6 +518,7 @@ impl Render<'_> {
             li class="autumn-tree-node" id=(format!("{base}-node"))
                 aria-level=(place.level) aria-setsize=(place.size) aria-posinset=(place.position)
                 data-autumn-tree-mixed=[mixed.then_some("true")]
+                data-autumn-tree-partial=[partial.then_some("true")]
             {
                 (input)
                 @match body {
@@ -586,11 +526,15 @@ impl Render<'_> {
                         label class="autumn-tree-row" for=(base) { (label) }
                     }
                     Body::Lazy(url) => {
-                        details class="autumn-tree-details" {
+                        details class="autumn-tree-details" open[open] {
                             summary class="autumn-tree-row" { (label) }
+                            // The group does not take the htmx attributes of
+                            // the form around it.
                             ul class="autumn-tree-group" id=(group_id)
                                 data-autumn-tree-src=(url) hx-get=(url)
                                 hx-trigger="autumn-tree:load" hx-swap="innerHTML"
+                                hx-target="this" hx-select="unset" hx-include="unset"
+                                hx-vals="unset" hx-confirm="unset" hx-push-url="false"
                             {
                                 li class="autumn-tree-placeholder" {
                                     a href=(url) { (tree.text.show) }
@@ -603,7 +547,7 @@ impl Render<'_> {
                             summary class="autumn-tree-row" {
                                 (label)
                                 @if mixed {
-                                    span class="autumn-tree-mixed" { (tree.text.mixed) }
+                                    span class="autumn-tree-mixed" id=(mixed_id) { (tree.text.mixed) }
                                 }
                             }
                             ul class="autumn-tree-group" id=(group_id) { (children) }
