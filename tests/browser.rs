@@ -399,9 +399,15 @@ async fn the_keyboard_core_moves_into_an_open_branch() {
     assert_eq!(focused(&page).await, "file-n-lib-node");
     page.press("ArrowDown").await.unwrap();
     assert_eq!(focused(&page).await, "file-n-bin-node");
-    // `build` is disabled: the core skips it.
     page.press("ArrowDown").await.unwrap();
-    assert_eq!(focused(&page).await, "file-n-docs-node");
+    // `build` is disabled. The 0.10.0 core skips it. A core with the tree
+    // keys gives it focus, as the APG allows.
+    let expected = if cfg!(feature = "core-tree-keys") {
+        "file-n-build-node"
+    } else {
+        "file-n-docs-node"
+    };
+    assert_eq!(focused(&page).await, expected);
 }
 
 // ── Selection ───────────────────────────────────────────────────────────
