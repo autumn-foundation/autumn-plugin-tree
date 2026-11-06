@@ -65,10 +65,11 @@ jobs:
           AUTUMN_CHROMIUM: ${{ steps.chrome.outputs.chrome-path }}
 
   autumn-main:
-    name: Browser (autumn trunk-dev, tree keys)
+    name: Browser (autumn tree keys)
     runs-on: ubuntu-latest
-    # The tree keys are not in an autumn-web release. This job can fail,
-    # and CI still passes.
+    # The tree keys are not in an autumn-web release. This job uses the
+    # autumn branch that adds them. When that branch is in trunk-dev, use
+    # trunk-dev.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +80,7 @@ jobs:
       - run: >
           cargo test --features system-tests,core-tree-keys --test browser
           --config 'patch.crates-io.autumn-web.git="https://github.com/autumn-foundation/autumn"'
-          --config 'patch.crates-io.autumn-web.branch="trunk-dev"'
+          --config 'patch.crates-io.autumn-web.branch="claude/bold-gates-jnx80m"'
           -- --include-ignored --test-threads=1
         env:
           AUTUMN_CHROMIUM: ${{ steps.chrome.outputs.chrome-path }}
