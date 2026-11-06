@@ -760,7 +760,7 @@ async fn the_page_has_no_console_error() {
     page.press(" ").await.unwrap();
     tokio::time::sleep(Duration::from_millis(250)).await;
     let errors = page.console_errors();
-    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(errors.len(), 0, "{errors:?}");
 }
 
 #[tokio::test]
@@ -775,7 +775,7 @@ async fn the_open_tree_has_no_axe_violation() {
     assert!(poll(&page, "!!document.getElementById('files-n-api-node')").await);
     let axe = std::fs::read_to_string("tests/fixtures/axe-core/axe.min.js").expect("axe-core");
     let violations = page.axe_violations(&axe).await.expect("axe runs");
-    assert!(violations.is_empty(), "{violations:#?}");
+    assert_eq!(violations.len(), 0, "{violations:#?}");
 }
 
 #[tokio::test]

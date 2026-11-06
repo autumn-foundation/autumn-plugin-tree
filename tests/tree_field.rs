@@ -122,7 +122,7 @@ fn a_parent_puts_its_input_before_a_details() {
         "li#file-n-src-node > details > ul.autumn-tree-group#file-n-src-group",
     );
     // No input in a summary.
-    assert!(select(&doc, "summary input").is_empty());
+    assert_eq!(select(&doc, "summary input").len(), 0);
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn a_multiple_tree_has_checkboxes_and_says_its_mode() {
     let html = multiple(&[], &TreeField::multiple(files()));
     let doc = parse(&html);
     assert_eq!(select(&doc, "input[type=checkbox]").len(), 5);
-    assert!(select(&doc, "input[type=radio]").is_empty());
+    assert_eq!(select(&doc, "input[type=radio]").len(), 0);
     let root = one(&doc, "ul.autumn-tree-root");
     assert_eq!(attr(root, "data-autumn-tree"), Some("multiple"));
     assert_eq!(attr(root, "data-autumn-tree-cascade"), Some("descendants"));
@@ -226,7 +226,7 @@ fn independent_nodes_do_not_cascade_or_mix() {
         Some("independent")
     );
     let doc = parse(&multiple(&["main"], &tree));
-    assert!(select(&doc, "[data-autumn-tree-mixed]").is_empty());
+    assert_eq!(select(&doc, "[data-autumn-tree-mixed]").len(), 0);
 }
 
 #[test]
@@ -263,7 +263,7 @@ fn a_lazy_node_has_an_empty_group_with_a_load_trigger_and_a_fallback_link() {
     let link = one(&doc, "li.autumn-tree-placeholder > a");
     assert_eq!(attr(link, "href"), Some("/files/children?node=arch"));
     assert_eq!(text(link), "Show contents");
-    assert!(select(&doc, "details[open]").is_empty());
+    assert_eq!(select(&doc, "details[open]").len(), 0);
 }
 
 #[test]
@@ -385,7 +385,7 @@ fn a_required_multiple_tree_marks_the_root_not_each_box() {
         Some("true")
     );
     // `required` on a box means "check this box", so no box gets it.
-    assert!(select(&doc, "input[required]").is_empty());
+    assert_eq!(select(&doc, "input[required]").len(), 0);
 }
 
 #[test]

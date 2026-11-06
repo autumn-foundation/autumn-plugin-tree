@@ -50,8 +50,9 @@ fn frozen() -> TreeField {
 fn a_disabled_parent_is_frozen_and_not_mixed() {
     let html = render(&frozen(), &["x"]);
     let doc = parse(&html);
-    assert!(
-        select(&doc, "li#files-n-d-node[data-autumn-tree-mixed]").is_empty(),
+    assert_eq!(
+        select(&doc, "li#files-n-d-node[data-autumn-tree-mixed]").len(),
+        0,
         "{html}"
     );
     assert_eq!(checked(&html), ["x"]);
@@ -168,12 +169,11 @@ fn many_submitted_values_resolve_fast() {
         .collect();
     let submitted: Vec<String> = (0..200_000).map(|i| format!("v{i}")).collect();
     let start = std::time::Instant::now();
-    assert!(
-        TreeField::single(nodes.clone())
-            .resolve(&submitted)
-            .is_empty()
+    assert_eq!(
+        TreeField::single(nodes.clone()).resolve(&submitted).len(),
+        0
     );
-    assert!(TreeField::multiple(nodes).resolve(&submitted).is_empty());
+    assert_eq!(TreeField::multiple(nodes).resolve(&submitted).len(), 0);
     assert!(
         start.elapsed() < std::time::Duration::from_secs(5),
         "{:?}",

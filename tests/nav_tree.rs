@@ -72,7 +72,7 @@ fn a_parent_link_is_the_first_item_of_its_list() {
     let first = one(&doc, "details > ul > li:first-child > a[href=\"/api\"]");
     assert_eq!(text(first), "API");
     // The summary holds no link.
-    assert!(select(&doc, "summary a").is_empty());
+    assert_eq!(select(&doc, "summary a").len(), 0);
 }
 
 #[test]
@@ -103,8 +103,8 @@ fn a_current_parent_marks_its_own_link() {
 #[test]
 fn no_current_means_all_closed() {
     let doc = parse(&render(None));
-    assert!(select(&doc, "details[open]").is_empty());
-    assert!(select(&doc, "[aria-current]").is_empty());
+    assert_eq!(select(&doc, "details[open]").len(), 0);
+    assert_eq!(select(&doc, "[aria-current]").len(), 0);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn an_unsafe_link_becomes_text() {
     let html = nav_tree("Docs", &nodes, None, &FieldOptions::new()).into_string();
     assert!(!html.contains("javascript:"), "{html}");
     let doc = parse(&html);
-    assert!(select(&doc, "a").is_empty());
+    assert_eq!(select(&doc, "a").len(), 0);
     assert_eq!(text(one(&doc, "li")), "Click");
 }
 
@@ -121,7 +121,7 @@ fn an_unsafe_link_becomes_text() {
 fn a_disabled_node_is_text() {
     let nodes = [TreeNode::new("x", "Soon").href("/soon").disabled()];
     let doc = parse(&nav_tree("Docs", &nodes, None, &FieldOptions::new()).into_string());
-    assert!(select(&doc, "a").is_empty());
+    assert_eq!(select(&doc, "a").len(), 0);
     assert_eq!(text(one(&doc, "li span")), "Soon");
 }
 
@@ -162,6 +162,6 @@ fn a_lazy_node_renders_as_a_leaf() {
         .href("/archive")
         .lazy("/archive/children")];
     let doc = parse(&nav_tree("Docs", &nodes, None, &FieldOptions::new()).into_string());
-    assert!(select(&doc, "details").is_empty());
+    assert_eq!(select(&doc, "details").len(), 0);
     assert_eq!(attr(one(&doc, "a"), "href"), Some("/archive"));
 }

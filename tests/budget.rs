@@ -74,7 +74,14 @@ fn the_nav_tree_has_the_same_budgets() {
 fn resolve_has_the_same_depth_budget() {
     let tree = TreeField::multiple(vec![chain(MAX_DEPTH + 5)]);
     let deep = format!("n{}", MAX_DEPTH + 3);
-    assert!(tree.resolve(&[deep.as_str()]).is_empty());
+    assert_eq!(tree.resolve(&[deep.as_str()]).len(), 0);
     let last = format!("n{MAX_DEPTH}");
-    assert!(!tree.resolve(&[last.as_str()]).is_empty());
+    let keys: Vec<String> = tree
+        .resolve(&[last.as_str()])
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    // The deepest node and, by the cascade, each of its ancestors.
+    assert_eq!(keys.len(), MAX_DEPTH);
+    assert_eq!(keys.last(), Some(&last));
 }
