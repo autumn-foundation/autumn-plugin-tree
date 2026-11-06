@@ -66,20 +66,41 @@
     column-gap: var(--space-1);
 }
 
+/* The input lines up with the first row, not with the open branch. */
 .autumn-tree-node > .autumn-tree-input {
-    margin: 0;
-    align-self: center;
-    min-width: 1rem;
-    min-height: 1rem;
+    align-self: start;
+    width: 1rem;
+    height: 1rem;
+    margin: calc((max(var(--autumn-tree-row), 24px) - 1rem) / 2) 0 0;
     accent-color: var(--primary);
 }
 
+/* A flex summary has no marker, so draw the chevron. */
 .autumn-tree-details > .autumn-tree-row {
-    list-style-position: inside;
+    list-style: none;
 }
 
-.autumn-tree-details > .autumn-tree-group {
-    margin-inline-start: calc(-1 * var(--space-5));
+.autumn-tree-details > .autumn-tree-row::-webkit-details-marker {
+    display: none;
+}
+
+.autumn-tree-details > .autumn-tree-row::before {
+    content: "";
+    flex: none;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-inline-end: var(--space-1);
+    border-inline-end: 2px solid var(--text-muted);
+    border-block-end: 2px solid var(--text-muted);
+    transform: rotate(-45deg);
+}
+
+[dir="rtl"] .autumn-tree-details > .autumn-tree-row::before {
+    transform: rotate(135deg);
+}
+
+.autumn-tree-details[open] > .autumn-tree-row::before {
+    transform: rotate(45deg);
 }
 
 .autumn-tree-placeholder {

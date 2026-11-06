@@ -462,11 +462,11 @@ impl Render<'_> {
             if !self.budget.take() {
                 break;
             }
-            let (item, check, checked_below) = self.item(node, level, index + 1, &size, forced);
-            markup.push_str(&item.into_string());
-            any_checked |= checked_below || check != Check::Off;
+            let item = self.item(node, level, index + 1, &size, forced);
+            markup.push_str(&item.markup.into_string());
+            any_checked |= item.checked_below || item.check != Check::Off;
             if !node.is_disabled() {
-                states.push(check);
+                states.push(item.check);
             }
         }
         Rendered {
@@ -476,8 +476,7 @@ impl Render<'_> {
         }
     }
 
-    /// Render one node. Return its markup, its check state, and whether a
-    /// node under it is checked.
+    /// Render one node.
     fn item(
         &mut self,
         node: &TreeNode,
@@ -485,37 +484,80 @@ impl Render<'_> {
         position: usize,
         size: &str,
         forced: bool,
-    ) -> (Markup, Check, bool) {
-        let tree = self.tree;
-        let token = node.key().token();
-        let suffix = format!("n-{token}");
-        let base = format!("{}-{suffix}", self.field);
-        let label_id = format!("{base}-label");
+    ) -> Item {
         let own = self.values.contains(node.key().as_str());
-        let cascades = tree.cascades();
-        let pushed = forced && cascades && !node.is_disabled();
+        let cascades = self.tree.cascades();
+        let on = own || (forced && cascades && !node.is_disabled());
         let lazy = match node.child_nodes() {
             Children::Lazy(url) => safe_href(url),
             _ => None,
         };
         let children = node.loaded();
-        let parent = can_descend(level) && (!children.is_empty() || lazy.is_some());
-
-        let (group, check, checked_below) = if parent && lazy.is_none() {
-            let below = self.items(children, level + 1, cascades && (own || pushed));
-            let check = if own || pushed {
+        let body = if !can_descend(level) {
+            Body::Leaf
+        } else if let Some(url) = lazy {
+            Body::Lazy(url)
+        } else if children.is_empty() {
+            Body::Leaf
+        } else {
+            let below = self.items(children, level + 1, cascades && on);
+            let check = if on {
                 Check::On
             } else if cascades {
                 below.check.unwrap_or(Check::Off)
             } else {
                 Check::Off
             };
-            (Some(below.markup), check, below.any_checked)
-        } else {
-            let check = if own || pushed { Check::On } else { Check::Off };
-            (None, check, false)
+            let markup = self.node(
+                node,
+                &Place {
+                    level,
+                    position,
+                    size,
+                },
+                check,
+                Body::Group(below.markup),
+                below.any_checked,
+            );
+            return Item {
+                markup,
+                check,
+                checked_below: below.any_checked,
+            };
         };
+        let check = if on { Check::On } else { Check::Off };
+        let markup = self.node(
+            node,
+            &Place {
+                level,
+                position,
+                size,
+            },
+            check,
+            body,
+            false,
+        );
+        Item {
+            markup,
+            check,
+            checked_below: false,
+        }
+    }
 
+    /// Write the `<li>` of one node: the input, then a label or a
+    /// `<details>` with the children.
+    fn node(
+        &self,
+        node: &TreeNode,
+        place: &Place<'_>,
+        check: Check,
+        body: Body<'_>,
+        open: bool,
+    ) -> Markup {
+        let tree = self.tree;
+        let suffix = format!("n-{}", node.key().token());
+        let base = format!("{}-{suffix}", self.field);
+        let label_id = format!("{base}-label");
         let mut attrs: Vec<(&str, &str)> = vec![
             ("type", if tree.multiple { "checkbox" } else { "radio" }),
             ("value", node.key().as_str()),
@@ -530,26 +572,23 @@ impl Render<'_> {
         }
         let input = self.input.write(&suffix, &attrs);
         let mixed = check == Check::Mixed;
-        let open = tree.expanded.contains(node.key()) || checked_below;
-        let level_text = level.to_string();
-        let position_text = position.to_string();
-
-        let markup = html! {
+        let open = open || tree.expanded.contains(node.key());
+        let label = html! { span class="autumn-tree-label" id=(label_id) { (node.label()) } };
+        let group_id = format!("{base}-group");
+        html! {
             li class="autumn-tree-node" id=(format!("{base}-node"))
-                aria-level=(level_text) aria-setsize=(size) aria-posinset=(position_text)
+                aria-level=(place.level) aria-setsize=(place.size) aria-posinset=(place.position)
                 data-autumn-tree-mixed=[mixed.then_some("true")]
             {
                 (input)
-                @if parent {
-                    details class="autumn-tree-details" open[open && lazy.is_none()] {
-                        summary class="autumn-tree-row" {
-                            span class="autumn-tree-label" id=(label_id) { (node.label()) }
-                            @if mixed {
-                                span class="autumn-tree-mixed" { (tree.text.mixed) }
-                            }
-                        }
-                        @if let Some(url) = lazy {
-                            ul class="autumn-tree-group" id=(format!("{base}-group"))
+                @match body {
+                    Body::Leaf => {
+                        label class="autumn-tree-row" for=(base) { (label) }
+                    }
+                    Body::Lazy(url) => {
+                        details class="autumn-tree-details" {
+                            summary class="autumn-tree-row" { (label) }
+                            ul class="autumn-tree-group" id=(group_id)
                                 data-autumn-tree-src=(url) hx-get=(url)
                                 hx-trigger="autumn-tree:load" hx-swap="innerHTML"
                             {
@@ -557,21 +596,48 @@ impl Render<'_> {
                                     a href=(url) { (tree.text.show) }
                                 }
                             }
-                        } @else {
-                            ul class="autumn-tree-group" id=(format!("{base}-group")) {
-                                @if let Some(group) = group { (group) }
-                            }
                         }
                     }
-                } @else {
-                    label class="autumn-tree-row" for=(base) {
-                        span class="autumn-tree-label" id=(label_id) { (node.label()) }
+                    Body::Group(children) => {
+                        details class="autumn-tree-details" open[open] {
+                            summary class="autumn-tree-row" {
+                                (label)
+                                @if mixed {
+                                    span class="autumn-tree-mixed" { (tree.text.mixed) }
+                                }
+                            }
+                            ul class="autumn-tree-group" id=(group_id) { (children) }
+                        }
                     }
                 }
             }
-        };
-        (markup, check, checked_below)
+        }
     }
+}
+
+/// One rendered node.
+struct Item {
+    markup: Markup,
+    check: Check,
+    /// A node under this one is checked or mixed.
+    checked_below: bool,
+}
+
+/// The position of a node in its level.
+struct Place<'a> {
+    level: usize,
+    position: usize,
+    size: &'a str,
+}
+
+/// What a node holds after its input.
+enum Body<'a> {
+    /// A label: an end node.
+    Leaf,
+    /// An empty group that loads from this URL.
+    Lazy(&'a str),
+    /// The rendered children.
+    Group(Markup),
 }
 
 /// The state of a parent from the states of its enabled children.
