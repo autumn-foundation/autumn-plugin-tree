@@ -155,7 +155,7 @@ The current link gets `aria-current="page"`. Its ancestors are open.
 Focus does not change the selection.
 
 **Note:** ArrowRight, ArrowLeft and `*` need the tree keys of the keyboard
-core (autumn-foundation/autumn#3417). They are not in `autumn-web` 0.10.0.
+core (autumn-foundation/autumn#3649). They are not in `autumn-web` 0.10.0.
 With 0.10.0 the other keys work, and the chevron opens and closes a node.
 With 0.10.0 a disabled node cannot take focus; use the chevron.
 

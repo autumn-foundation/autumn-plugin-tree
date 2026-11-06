@@ -20,7 +20,7 @@ and ship as a plugin through the widget plugin seam (autumn#3400).
 | AC5 | The pack passes the static conformance checks and the browser gate (axe, console, keyboard). | #3400 |
 | AC6 | The widget works with JavaScript off. | #3393 |
 | AC7 | A form input binds to a `Changeset<T>` and to `form_for` through `FieldRenderer`. | #3400 |
-| AC8 | A dedicated sub-issue exists and links to #3417. | #3417 |
+| AC8 | A dedicated sub-issue exists and links to #3417 (it is #3649). | #3417 |
 
 ## Brainstorming
 
