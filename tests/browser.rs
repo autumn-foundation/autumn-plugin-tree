@@ -201,7 +201,7 @@ async fn attr(page: &Page, id: &str, name: &str) -> String {
 }
 
 async fn click_toggle(page: &Page, id: &str) {
-    page.click(&format!("#{id} > .autumn-tree-row > .autumn-tree-toggle"))
+    page.click(&format!("#{id} > .autumn-tree-toggle"))
         .await
         .expect("click toggle");
 }
@@ -226,8 +226,20 @@ async fn the_server_list_becomes_an_apg_tree() {
             "document.querySelectorAll('[role=tree] details').length === 0",
         ),
         (
-            "each node is a treeitem",
-            "[...document.querySelectorAll('[role=tree] li.autumn-tree-node')].every(li => li.getAttribute('role') === 'treeitem')",
+            "each node is a presentational li",
+            "[...document.querySelectorAll('[role=tree] li.autumn-tree-node')].every(li => li.getAttribute('role') === 'none')",
+        ),
+        (
+            "each row is a treeitem",
+            "[...document.querySelectorAll('[role=tree] .autumn-tree-row')].every(r => r.getAttribute('role') === 'treeitem')",
+        ),
+        (
+            "a parent owns its group",
+            "document.getElementById('files-n-src-node').getAttribute('aria-owns') === 'files-n-src-group'",
+        ),
+        (
+            "an item declares its position",
+            "document.getElementById('files-n-bin-node').getAttribute('aria-level') === '2' && document.getElementById('files-n-bin-node').getAttribute('aria-posinset') === '2'",
         ),
         (
             "each child list is a group",
@@ -362,7 +374,7 @@ async fn enter_selects_and_focus_does_not() {
 #[ignore = "requires Chromium"]
 async fn a_click_on_the_row_selects() {
     let (_runner, page) = start().await;
-    page.click("#file-n-readme-node > .autumn-tree-row .autumn-tree-label")
+    page.click("#file-n-readme-node > .autumn-tree-label")
         .await
         .unwrap();
     assert_eq!(
@@ -652,11 +664,10 @@ async fn with_javascript_off_the_tree_is_a_native_list() {
     for js in checks {
         assert!(eval_bool(&page, js).await, "{js}");
     }
-    page.click("label[for=files-n-readme]").await.unwrap();
+    // `Page::click` waits for htmx, which does not run here.
+    assert!(eval_bool(&page, "(() => { document.querySelector('label[for=files-n-readme]').click(); return true; })()").await);
     assert!(eval_bool(&page, "document.getElementById('files-n-readme').checked").await);
-    page.click("#files-n-src-node > details > summary")
-        .await
-        .unwrap();
+    assert!(eval_bool(&page, "(() => { document.querySelector('#files-n-src-node > details > summary').click(); return true; })()").await);
     assert!(
         eval_bool(
             &page,

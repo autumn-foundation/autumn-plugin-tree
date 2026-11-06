@@ -3,13 +3,24 @@
 // a WAI-ARIA APG tree. The keyboard core in autumn-widgets.js moves the
 // focus and opens and closes branches. This file does the rest: click,
 // Enter, Space, Ctrl+A, the cascade, the tri-state and lazy loading.
+//
+// After the upgrade, each node is:
+//
+//   <li class="autumn-tree-node" role="none">
+//     <input hidden>                       the form state
+//     <div class="autumn-tree-row" role="treeitem" aria-owns="…-group">
+//     <span class="autumn-tree-mixed">     the "partly selected" text
+//     <ul class="autumn-tree-group" role="group">
+//
+// The row is the item, so its name and its visible text are the label.
 (function () {
   'use strict';
 
   var ROOT = 'ul[data-autumn-tree]';
-  var ITEM = '[role="treeitem"]';
-  // Items in a closed branch and loading rows are not reachable.
-  var REACHABLE = '[role="treeitem"]:not([role="treeitem"][aria-expanded="false"] [role="treeitem"]):not(.autumn-tree-placeholder)';
+  var ITEM = '.autumn-tree-row[role="treeitem"]';
+  // Items in a closed branch and loading rows are not reachable. A newer
+  // keyboard core also skips a hidden subtree itself.
+  var REACHABLE = '[role="treeitem"]:not([role="group"][hidden] [role="treeitem"]):not(.autumn-tree-placeholder)';
 
   function closest(el, selector) {
     return el && el.closest ? el.closest(selector) : null;
@@ -21,28 +32,37 @@
     return isMultiple(root) && root.getAttribute('data-autumn-tree-cascade') === 'descendants';
   }
   function child(el, selector) {
-    for (var i = 0; i < el.children.length; i++) {
+    for (var i = 0; el && i < el.children.length; i++) {
       if (el.children[i].matches(selector)) return el.children[i];
     }
     return null;
   }
+  // The item, the input and the group are children of one <li>.
   function inputOf(item) {
-    return child(item, 'input');
+    return child(item.parentElement, 'input');
   }
   function groupOf(item) {
-    return child(item, '[role="group"]');
+    return child(item.parentElement, '.autumn-tree-group');
   }
-  function rowOf(item) {
-    return child(item, '.autumn-tree-row');
+  function itemOf(li) {
+    return child(li, ITEM);
   }
-  // The child items that count for the state of a parent.
+  // The parent item, or null for a root item.
+  function parentOf(item) {
+    var group = item.parentElement.parentElement;
+    return group && group.matches('.autumn-tree-group') ? itemOf(group.parentElement) : null;
+  }
+  // The enabled child items: they count for the state of a parent.
   function childItems(item) {
     var group = groupOf(item);
     if (!group) return [];
-    return Array.prototype.filter.call(group.children, function (li) {
-      var input = li.matches(ITEM) && inputOf(li);
+    return Array.prototype.map.call(group.children, itemOf).filter(function (it) {
+      var input = it && inputOf(it);
       return input && !input.disabled;
     });
+  }
+  function itemsIn(el) {
+    return Array.prototype.slice.call(el.querySelectorAll(ITEM));
   }
   function emit(el, name) {
     el.dispatchEvent(new CustomEvent(name, { bubbles: true, detail: { item: el } }));
@@ -50,9 +70,11 @@
 
   // ── Upgrade ──────────────────────────────────────────────────────────
 
-  function upgradeItem(li) {
-    if (li.hasAttribute('role')) return;
-    var input = inputOf(li);
+  // Change one server node to a tree item. Return the item, or null when
+  // the node is already upgraded.
+  function upgradeNode(li) {
+    if (li.hasAttribute('role')) return null;
+    var input = child(li, 'input');
     var details = child(li, 'details');
     var source = details ? child(details, 'summary') : child(li, 'label');
     var row = document.createElement('div');
@@ -65,28 +87,45 @@
     });
     while (source && source.firstChild) row.appendChild(source.firstChild);
     li.insertBefore(row, details || source);
+    // The "partly selected" text goes out of the row: it is a description.
+    var mixed = row.querySelector('.autumn-tree-mixed');
+    if (mixed) li.insertBefore(mixed, row.nextSibling);
     if (details) {
       var group = child(details, 'ul');
       group.setAttribute('role', 'group');
       li.appendChild(group);
-      li.setAttribute('aria-expanded', details.open ? 'true' : 'false');
+      row.setAttribute('aria-expanded', details.open ? 'true' : 'false');
+      if (group.id) row.setAttribute('aria-owns', group.id);
       group.hidden = !details.open;
       details.remove();
     } else if (source) {
       source.remove();
     }
+    // The row takes the id and the position of the node.
+    if (li.id) {
+      row.id = li.id;
+      li.removeAttribute('id');
+    }
+    ['aria-level', 'aria-setsize', 'aria-posinset'].forEach(function (name) {
+      if (li.hasAttribute(name)) {
+        row.setAttribute(name, li.getAttribute(name));
+        li.removeAttribute(name);
+      }
+    });
     var label = row.querySelector('.autumn-tree-label');
-    if (label && label.id) li.setAttribute('aria-labelledby', label.id);
-    li.setAttribute('role', 'treeitem');
-    li.tabIndex = -1;
+    if (label && label.id) row.setAttribute('aria-labelledby', label.id);
+    li.setAttribute('role', 'none');
+    row.setAttribute('role', 'treeitem');
+    row.tabIndex = -1;
     if (input) {
       input.hidden = true;
       input.tabIndex = -1;
       // A hidden control cannot show the browser message. The tree has
       // aria-required, and the server checks the value.
       input.required = false;
-      if (input.disabled) li.setAttribute('aria-disabled', 'true');
+      if (input.disabled) row.setAttribute('aria-disabled', 'true');
     }
+    return row;
   }
 
   // A loading row: an item that is not reachable, with a status text.
@@ -107,10 +146,23 @@
     if (root.getAttribute('data-autumn-tree-required') === 'true') {
       root.setAttribute('aria-required', 'true');
     }
-    root.querySelectorAll('li.autumn-tree-node').forEach(upgradeItem);
+    var fresh = [];
+    root.querySelectorAll('li.autumn-tree-node').forEach(function (li) {
+      var item = upgradeNode(li);
+      if (item) fresh.push(item);
+    });
     root.querySelectorAll('li.autumn-tree-placeholder').forEach(function (li) {
       upgradePlaceholder(li, root);
     });
+    // A checked parent checks its new children (lazy loading). Tree order:
+    // a parent comes first.
+    if (cascades(root)) {
+      fresh.forEach(function (item) {
+        var parent = parentOf(item);
+        var input = inputOf(item);
+        if (parent && inputOf(parent).checked && input && !input.disabled) input.checked = true;
+      });
+    }
     refresh(root);
   }
 
@@ -131,7 +183,7 @@
   // Write the ARIA state from the inputs. A cascade parent with loaded
   // children takes its state from them.
   function refresh(root) {
-    var items = root.querySelectorAll('li.autumn-tree-node' + ITEM);
+    var items = itemsIn(root);
     if (!isMultiple(root)) {
       items.forEach(function (item) {
         var input = inputOf(item);
@@ -162,13 +214,13 @@
 
   // The hidden "partly selected" text of a mixed parent.
   function note(root, item, mixed) {
-    var row = rowOf(item);
-    var span = row && row.querySelector('.autumn-tree-mixed');
-    if (!span && mixed && row) {
+    var li = item.parentElement;
+    var span = child(li, '.autumn-tree-mixed');
+    if (!span && mixed) {
       span = document.createElement('span');
       span.className = 'autumn-tree-mixed';
       span.textContent = root.getAttribute('data-autumn-tree-mixed-text') || '';
-      row.appendChild(span);
+      li.insertBefore(span, item.nextSibling);
     }
     if (!span) return;
     if (!span.id) span.id = item.id + '-mixed';
@@ -185,9 +237,9 @@
     if (isMultiple(root)) {
       var on = item.getAttribute('aria-checked') !== 'true';
       input.checked = on;
-      if (cascades(root)) {
-        var group = groupOf(item);
-        if (group) group.querySelectorAll('li.autumn-tree-node' + ITEM).forEach(function (d) {
+      var group = groupOf(item);
+      if (cascades(root) && group) {
+        itemsIn(group).forEach(function (d) {
           var di = inputOf(d);
           if (di && !di.disabled) di.checked = on;
         });
@@ -202,7 +254,7 @@
 
   function checkAll(root) {
     var last = null;
-    root.querySelectorAll('li.autumn-tree-node' + ITEM).forEach(function (item) {
+    itemsIn(root).forEach(function (item) {
       var input = inputOf(item);
       if (input && !input.disabled && !input.checked) {
         input.checked = true;
@@ -242,27 +294,21 @@
 
   document.addEventListener('autumn:expand', function (e) {
     var item = e.target;
-    if (item && item.matches && item.matches('li.autumn-tree-node' + ITEM)) load(item);
+    if (item && item.matches && item.matches(ITEM)) load(item);
   });
 
   // htmx swapped the children in. The core and `autumn:init` ran first.
   document.addEventListener('htmx:afterSwap', function (e) {
     var group = e.target;
     if (!group || !group.hasAttribute || !group.hasAttribute('data-autumn-tree-src')) return;
-    var item = group.parentElement;
+    var item = itemOf(group.parentElement);
     var root = closest(group, ROOT);
     group.removeAttribute('aria-busy');
     group.setAttribute('data-autumn-tree-loaded', '');
-    var input = inputOf(item);
-    if (root && cascades(root) && input && input.checked) {
-      group.querySelectorAll('li.autumn-tree-node' + ITEM).forEach(function (d) {
-        var di = inputOf(d);
-        if (di && !di.disabled) di.checked = true;
-      });
-    }
     // An empty branch is an end node.
-    if (!group.querySelector(ITEM)) {
+    if (item && !group.querySelector(ITEM)) {
       item.removeAttribute('aria-expanded');
+      item.removeAttribute('aria-owns');
       group.remove();
     }
     if (root) refresh(root);
@@ -282,9 +328,8 @@
   // ── Pointer and keys ─────────────────────────────────────────────────
 
   document.addEventListener('click', function (e) {
-    var row = closest(e.target, '.autumn-tree--enhanced .autumn-tree-row');
-    var item = row && row.parentElement;
-    if (!item || !item.matches(ITEM) || item.getAttribute('aria-disabled') === 'true') return;
+    var item = closest(e.target, '.autumn-tree--enhanced ' + ITEM);
+    if (!item || item.getAttribute('aria-disabled') === 'true') return;
     if (closest(e.target, '.autumn-tree-toggle') && item.hasAttribute('aria-expanded')) {
       setOpen(item, item.getAttribute('aria-expanded') !== 'true');
       return;
@@ -298,7 +343,7 @@
     var item = e.target;
     if (!item || !item.matches || !item.matches('.autumn-tree--enhanced ' + ITEM)) return;
     var root = closest(item, ROOT);
-    if ((e.ctrlKey && (e.key === 'a' || e.key === 'A')) && isMultiple(root)) {
+    if (e.ctrlKey && (e.key === 'a' || e.key === 'A') && isMultiple(root)) {
       e.preventDefault();
       checkAll(root);
       return;

@@ -26,6 +26,10 @@ Option 2 for `TreeField`. Option 3 for `nav_tree`.
 - The server declares level, position and set size on each item.
 - The script moves the label into a row, sets the roles, hides the inputs
   and keeps them in the form.
+- The row is the `treeitem`. The `<li>` is `role="none"`. The row names its
+  group in `aria-owns`. An `<li>` item would hold its open group, so its
+  visible text would not match its name (axe
+  `label-content-name-mismatch`).
 - The keyboard core owns the arrow keys, Home, End and typeahead. The pack
   owns click, Enter, Space and Ctrl+A.
 - Multiple trees use `aria-checked`, with `mixed` for a parent with some

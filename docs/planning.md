@@ -154,17 +154,25 @@ Cascade::{ Descendants, Independent }
 ### Upgraded markup (after `autumn:init`)
 
 ```html
-<ul class="autumn-tree autumn-tree--enhanced" role="tree" aria-label="Folders"
-    aria-multiselectable="true" data-autumn-roving data-autumn-orientation="vertical"
+<ul class="autumn-tree-root autumn-tree--enhanced" role="tree" aria-label="Folders"
+    aria-multiselectable="true" data-autumn-roving="…" data-autumn-orientation="vertical"
     data-autumn-typeahead>
-  <li role="treeitem" tabindex="0" aria-expanded="true" aria-checked="mixed"
-      aria-labelledby="f-src-label" aria-level="1" aria-setsize="1" aria-posinset="1">
+  <li class="autumn-tree-node" role="none">
     <input type="checkbox" … hidden>
-    <div class="autumn-tree-row">…<span class="autumn-tree-label" id="f-src-label">src</span></div>
-    <ul class="autumn-tree-group" role="group">…</ul>
+    <div class="autumn-tree-row" role="treeitem" id="f-n-src-node" tabindex="0"
+         aria-expanded="true" aria-owns="f-n-src-group" aria-checked="mixed"
+         aria-labelledby="f-n-src-label" aria-level="1" aria-setsize="1" aria-posinset="1">
+      …<span class="autumn-tree-label" id="f-n-src-label">src</span>
+    </div>
+    <ul class="autumn-tree-group" id="f-n-src-group" role="group">…</ul>
   </li>
 </ul>
 ```
+
+The row is the tree item, not the `<li>`. An `<li>` item holds its open
+group, so its visible text is the whole branch, and axe reports
+`label-content-name-mismatch`. The row holds the label only. `aria-owns`
+links the row to its group, as in the APG navigation tree example.
 
 ### Who does what
 
