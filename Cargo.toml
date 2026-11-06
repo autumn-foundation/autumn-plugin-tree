@@ -1,0 +1,49 @@
+[package]
+name = "autumn-plugin-tree"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+description = "Autumn widget pack: an APG tree view and a navigation tree, server-rendered with maud."
+license = "Apache-2.0"
+repository = "https://github.com/autumn-foundation/autumn-plugin-tree"
+readme = "README.md"
+keywords = ["autumn", "tree", "widget", "accessibility", "htmx"]
+categories = ["web-programming"]
+exclude = [".github/", "docs/", "tests/fixtures/", "CLAUDE.md", "clippy.toml"]
+
+[features]
+default = []
+# Browser tests in Chromium. They are `#[ignore]`d and need this feature.
+system-tests = ["autumn-web/system-tests", "autumn-web/htmx"]
+
+[dependencies]
+# No default features. The host app selects the Autumn features.
+autumn-web = { version = "0.10", default-features = false, features = ["maud"] }
+# The `html!` macro expands to `maud::` paths.
+maud = "0.27"
+serde = "1"
+
+[dev-dependencies]
+autumn-web = { version = "0.10", default-features = false, features = ["maud", "htmx", "embed-assets"] }
+proptest = "1"
+scraper = "0.29.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+module_name_repetitions = "allow"
